@@ -1,8 +1,9 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ApiFailure, ApiIssue, Dispense, requestJson } from './api';
 import { FieldErrors } from './field-errors';
+import { Icon } from './icon';
 
 interface Submission {
   medicine_code: string;
@@ -27,36 +28,80 @@ function formatBusinessTime(value: Date): string {
 
 @Component({
   selector: 'app-capture',
-  imports: [FormsModule, RouterLink, FieldErrors],
+  imports: [FormsModule, Icon, RouterLink, FieldErrors],
   template: `
-    <h1>Capture dispense</h1>
-    <!-- Submit or replay the pending payload through one guarded handler. -->
-    <form (ngSubmit)="submit()">
-      <fieldset [disabled]="busy() || uncertain() || recorded() !== null">
-        <label>Medicine code<input name="medicine" [(ngModel)]="form.medicine_code" required maxlength="80" aria-describedby="medicine_code-errors"></label>
-        <app-field-errors field="medicine_code" [issues]="issues()" />
-        <label>Patient reference<input name="patient" [(ngModel)]="form.patient_ref" required maxlength="120" aria-describedby="patient_ref-errors"></label>
-        <app-field-errors field="patient_ref" [issues]="issues()" />
-        <label>Quantity<input name="quantity" type="number" [(ngModel)]="form.quantity" required min="1" max="2147483647" step="1" aria-describedby="quantity-errors"></label>
-        <app-field-errors field="quantity" [issues]="issues()" />
-        <label>Dispensed at (Africa/Johannesburg)<input name="occurred" type="datetime-local" [(ngModel)]="form.occurred" required step="1" aria-describedby="dispensed_at-errors"></label>
-        <app-field-errors field="dispensed_at" [issues]="issues()" />
-        <label>Authorisation reference<input name="authorisation" [(ngModel)]="form.authorisation_ref" maxlength="120" aria-describedby="authorisation_ref-errors"></label>
-        <app-field-errors field="authorisation_ref" [issues]="issues()" />
-      </fieldset>
-      <app-field-errors field="idempotency_key" [issues]="issues()" />
-      <app-field-errors field="body" [issues]="issues()" />
-      @if (uncertain()) { <p role="alert" class="error">Outcome unknown. Retry the same request to confirm it.</p> }
-      <button type="submit" [disabled]="busy() || recorded() !== null">
-        {{ busy() ? 'Saving…' : uncertain() ? 'Retry same request' : 'Record dispense' }}
-      </button>
-    </form>
+    <div class="page-header"><div>
+      <h1>Capture dispense</h1>
+      <p>Record medicine handed to a patient. The server validates it against the rule in force at the dispense time.</p>
+    </div></div>
     <!-- Show confirmed success and require an explicit new operation before saving again. -->
     @if (recorded(); as dispense) {
-      <p role="status" class="success">Dispense recorded: {{ dispense.id }}.</p>
-      <a routerLink="/ledger" [queryParams]="{ patient: dispense.patient_ref }">View patient ledger</a>
-      <button type="button" (click)="startNew()">New dispense</button>
+      <div class="alert success"><app-icon name="check" /><div class="alert-body">
+        <p role="status">Dispense recorded: {{ dispense.id }}.</p>
+        <p class="hint">{{ dispense.quantity }} × {{ dispense.medicine_code }} for {{ dispense.patient_ref }}</p>
+        <div class="actions">
+          <a class="button" routerLink="/ledger" [queryParams]="{ patient: dispense.patient_ref }"><app-icon name="ledger" />View patient ledger</a>
+          <button type="button" class="secondary" (click)="startNew()"><app-icon name="plus" />New dispense</button>
+        </div>
+      </div></div>
     }
+    @if (uncertain()) {
+      <div class="alert warning" role="alert"><app-icon name="alert" /><div class="alert-body">
+        <p>Outcome unknown. Retry the same request to confirm it.</p>
+        <p class="hint">The fields are locked so the retry carries the same idempotency key and cannot record twice.</p>
+      </div></div>
+    }
+    @if (generalIssues().length) {
+      <div class="alert error" role="alert"><app-icon name="alert" /><div class="alert-body">
+        <app-field-errors field="idempotency_key" [issues]="issues()" />
+        <app-field-errors field="body" [issues]="issues()" />
+      </div></div>
+    }
+    <div class="split">
+      <!-- Submit or replay the pending payload through one guarded handler. -->
+      <form class="card" (ngSubmit)="submit()">
+        <div class="card-body">
+          <fieldset class="field-grid" [disabled]="busy() || uncertain() || recorded() !== null">
+            <div [class.invalid]="hasIssue('medicine_code')">
+              <label>Medicine code<input name="medicine" class="mono" [(ngModel)]="form.medicine_code" required maxlength="80" placeholder="SEED-0000" aria-describedby="medicine_code-errors"></label>
+              <app-field-errors field="medicine_code" [issues]="issues()" />
+            </div>
+            <div [class.invalid]="hasIssue('patient_ref')">
+              <label>Patient reference<input name="patient" [(ngModel)]="form.patient_ref" required maxlength="120" placeholder="patient-0000" aria-describedby="patient_ref-errors"></label>
+              <app-field-errors field="patient_ref" [issues]="issues()" />
+            </div>
+            <div [class.invalid]="hasIssue('quantity')">
+              <label>Quantity<input name="quantity" type="number" [(ngModel)]="form.quantity" required min="1" max="2147483647" step="1" aria-describedby="quantity-errors"></label>
+              <app-field-errors field="quantity" [issues]="issues()" />
+            </div>
+            <div [class.invalid]="hasIssue('dispensed_at')">
+              <label>Dispensed at (Africa/Johannesburg)<input name="occurred" type="datetime-local" [(ngModel)]="form.occurred" required step="1" aria-describedby="dispensed_at-errors"></label>
+              <app-field-errors field="dispensed_at" [issues]="issues()" />
+            </div>
+            <div class="wide" [class.invalid]="hasIssue('authorisation_ref')">
+              <label>Authorisation reference<input name="authorisation" [(ngModel)]="form.authorisation_ref" maxlength="120" aria-describedby="authorisation_ref-errors"></label>
+              <p class="hint">Required only when the rule in force demands authorisation.</p>
+              <app-field-errors field="authorisation_ref" [issues]="issues()" />
+            </div>
+          </fieldset>
+          <div class="actions">
+            <button type="submit" [disabled]="busy() || recorded() !== null">
+              <app-icon [name]="uncertain() ? 'retry' : 'check'" />{{ busy() ? 'Saving…' : uncertain() ? 'Retry same request' : 'Record dispense' }}
+            </button>
+          </div>
+        </div>
+      </form>
+      <aside class="card aside"><div class="card-body">
+        <h2>What the server checks</h2>
+        <ol>
+          <li>The medicine is active and has a rule in force at the dispense time.</li>
+          <li>Quantity is within the single-dispense limit.</li>
+          <li>The patient's 30-day total stays within the allowance, including later dispenses a backdated entry affects.</li>
+          <li>An authorisation reference is present when required.</li>
+        </ol>
+        <p class="hint">Every violated rule is shown beside its field at once.</p>
+      </div></aside>
+    </div>
   `,
 })
 export class CaptureDispense implements OnInit {
@@ -66,6 +111,8 @@ export class CaptureDispense implements OnInit {
   readonly uncertain = signal(false);
   readonly issues = signal<ApiIssue[]>([]);
   readonly recorded = signal<Dispense | null>(null);
+  // Errors that belong to no form control are shown in a banner above the form.
+  readonly generalIssues = computed(() => this.issues().filter(issue => issue.field === 'body' || issue.field === 'idempotency_key'));
   form = {
     medicine_code: this.route.snapshot.queryParamMap.get('medicine') ?? '',
     patient_ref: '', quantity: 1, occurred: formatBusinessTime(new Date()), authorisation_ref: '',
@@ -130,6 +177,11 @@ export class CaptureDispense implements OnInit {
       // Release the submit control for a safe retry or corrected operation.
       this.busy.set(false);
     }
+  }
+
+  /** Highlight a control when the server rejected its value. */
+  hasIssue(field: string): boolean {
+    return this.issues().some(issue => issue.field === field);
   }
 
   /** Begin another dispense only after the previous operation is confirmed. */

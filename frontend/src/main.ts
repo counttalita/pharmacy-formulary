@@ -1,16 +1,26 @@
 import { Component } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
-import { provideRouter, RouterLink, RouterOutlet } from '@angular/router';
+import { provideRouter, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { CaptureDispense } from './capture';
+import { Icon } from './icon';
 import { ShowLedger } from './ledger';
 import { ShowMedicine } from './medicine-detail';
 import { SearchMedicines } from './medicines';
 
 @Component({
   selector: 'app-root',
-  imports: [RouterLink, RouterOutlet],
+  imports: [Icon, RouterLink, RouterLinkActive, RouterOutlet],
   template: `
-    <nav aria-label="Main navigation"><a routerLink="/medicines">Medicines</a><a routerLink="/capture">Capture dispense</a><a routerLink="/ledger">Patient ledger</a></nav>
+    <!-- Shared shell around the four views; the active link follows the current route. -->
+    <header class="topbar"><div class="topbar-inner">
+      <a class="brand" routerLink="/medicines"><span class="brand-mark"><app-icon name="pill" /></span>
+        <span>Formulary<small>Community pharmacy</small></span></a>
+      <nav aria-label="Main navigation">
+        <a routerLink="/medicines" routerLinkActive="active"><app-icon name="search" />Medicines</a>
+        <a routerLink="/capture" routerLinkActive="active"><app-icon name="clipboard" />Capture dispense</a>
+        <a routerLink="/ledger" routerLinkActive="active"><app-icon name="ledger" />Patient ledger</a>
+      </nav>
+    </div></header>
     <main><router-outlet /></main>
   `,
 })
