@@ -124,3 +124,16 @@ test('reload medicine detail when the route code changes', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Generated medicine 0001' })).toBeVisible();
 });
 
+// The patient filter lives in the URL so reloads and the main navigation stay consistent.
+test('keep the ledger filter in the URL', async ({ page }) => {
+  await page.goto('/ledger');
+  await page.getByLabel('Patient reference').fill('patient-0000');
+  await page.getByRole('button', { name: 'Find dispenses' }).click();
+  await expect(page).toHaveURL(/patient=patient-0000/);
+  await expect(page.getByRole('cell', { name: 'SEED-0000' }).first()).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('cell', { name: 'SEED-0000' }).first()).toBeVisible();
+  await page.getByRole('link', { name: 'Patient ledger' }).click();
+  await expect(page.getByLabel('Patient reference')).toHaveValue('');
+  await expect(page.getByRole('table')).toHaveCount(0);
+});

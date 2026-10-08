@@ -1,7 +1,8 @@
 import { DatePipe } from '@angular/common';
-import { Component, inject, OnDestroy, OnInit } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { Dispense } from './api';
 import { PageControls } from './page-controls';
 import { Pager } from './pager';
@@ -14,12 +15,12 @@ import { Pager } from './pager';
     <!-- Submit the opaque reference unchanged and start a fresh ledger traversal. -->
     <form (ngSubmit)="search()">
       <label>Patient reference<input name="patient" [(ngModel)]="patient" required maxlength="120"></label>
-      <button type="submit" [disabled]="!patient">Find dispenses</button>
+      <button type="submit" [disabled]="!patient()">Find dispenses</button>
     </form>
     <!-- Read the current ledger request state. -->
     @if (pager.busy()) { <p role="status">Loading dispenses…</p> }
     @if (pager.error()) { <p role="alert" class="error">{{ pager.error() }}</p> }
-    @if (searched && !pager.busy() && !pager.error() && !pager.items().length) { <p>No dispenses found for this reference.</p> }
+    @if (searched() && !pager.busy() && !pager.error() && !pager.items().length) { <p>No dispenses found for this reference.</p> }
     @if (pager.items().length) {
       <p>Newest first. Times are shown in Africa/Johannesburg.</p>
       <table><thead><tr><th>Dispensed at</th><th>Medicine</th><th>Quantity</th><th>Authorisation</th></tr></thead>
@@ -32,30 +33,39 @@ import { Pager } from './pager';
     <app-page-controls [pager]="pager" />
   `,
 })
-export class ShowLedger implements OnInit, OnDestroy {
-  // Preselect the reference when arriving from a successful capture.
+export class ShowLedger {
+  // The URL query parameter is the single source of truth for the selected patient.
   private readonly route = inject(ActivatedRoute);
-  patient = this.route.snapshot.queryParamMap.get('patient') ?? '';
-  searched = false;
+  private readonly router = inject(Router);
+  readonly patient = signal('');
+  readonly searched = signal(false);
   readonly pager = new Pager<Dispense>('/dispenses');
 
-  /** Load a linked patient's ledger without requiring another form submission. */
-  ngOnInit(): void {
-    // Avoid listing unrelated patients when the reference is empty.
-    if (this.patient) void this.search();
+  /** Follow the patient query parameter, including reloads, history and the main navigation link. */
+  constructor() {
+    // takeUntilDestroyed releases the subscription with the view.
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe(params => {
+      this.patient.set(params.get('patient') ?? '');
+      void this.loadLedger();
+    });
   }
 
-  /** Load the first page for exactly the entered reference. */
+  /** Record the entered reference in the URL; the subscription performs the load. */
   async search(): Promise<void> {
-    if (!this.patient) return;
-    this.searched = true;
-    // Reset cursor scope whenever the patient changes.
-    await this.pager.search({ patient_ref: this.patient });
+    const patient = this.patient();
+    if (!patient) return;
+    // Navigating to the same URL is ignored by the router, so refresh the same patient directly.
+    if (patient === this.route.snapshot.queryParamMap.get('patient')) return this.loadLedger();
+    await this.router.navigate([], { queryParams: { patient } });
   }
 
-  /** Cancel ledger reads when the user navigates away. */
-  ngOnDestroy(): void {
-    // Stop stale results from updating a destroyed component.
-    this.pager.cancel();
+  /** Load the first page for exactly the selected reference, or clear the view when none is selected. */
+  private async loadLedger(): Promise<void> {
+    const patient = this.patient();
+    this.searched.set(!!patient);
+    // Avoid listing unrelated patients when the reference is empty.
+    if (!patient) return this.pager.clear();
+    // Reset cursor scope whenever the patient changes.
+    await this.pager.search({ patient_ref: patient });
   }
 }
