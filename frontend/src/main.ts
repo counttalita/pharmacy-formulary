@@ -14,7 +14,7 @@ import { SearchMedicines } from './medicines';
     <!-- Shared shell around the four views; the active link follows the current route. -->
     <header class="topbar"><div class="topbar-inner">
       <a class="brand" routerLink="/medicines"><span class="brand-mark"><app-icon name="pill" /></span>
-        <span>Formulary<small>Community pharmacy</small></span></a>
+        <span>Formulary</span></a>
       <nav aria-label="Main navigation">
         <a routerLink="/medicines" routerLinkActive="active"><app-icon name="search" />Medicines</a>
         <a routerLink="/capture" routerLinkActive="active"><app-icon name="clipboard" />Capture dispense</a>
