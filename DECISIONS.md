@@ -23,5 +23,16 @@ A backdated insertion also checks already accepted event windows in the followin
 ## Pagination
 Use keyset pagination: unique code for medicines, descending (dispensed_at, id) for the ledger, fetching limit + 1 to detect continuation. Tokens contain filter scope and typed values; values are bound parameters. Offset pagination was simpler for arbitrary page numbers but slows at depth and shifts when new dispenses arrive. We give up page numbers and total counts. A backdated event inserted ahead of an already traversed cursor appears after refreshing, not retroactively on that traversal. Rule history is returned in full as explicitly requested; there are only a handful of rows per medicine in this assessment.
 
+## Indexing strategy
+Each index exists for one known query shape, ordered to match that query's equality columns, then its sort or range column:
+- `ix_dispense_window (patient_ref, medicine_id, dispensed_at) INCLUDE (quantity)` serves the rolling-sum and affected-later-window checks inside the dispense lock as an index-only scan, so the serialized section stays short.
+- `ix_dispense_patient`, `ix_dispense_medicine` and `ix_dispense_recent`, each ending `(dispensed_at DESC, id DESC)`, match the ledger's keyset order exactly, so the first page and every continuation read only `limit + 1` index entries without sorting.
+- `ix_rule_history (medicine_id, effective_from, id)` serves the ordered history; the exclusion constraint's GiST index serves the point-in-time rule lookup.
+- `pg_trgm` GIN indexes on `name` and `code` serve `ILIKE '%term%'`, which a B-tree cannot. Medicine pages use the unique `code` index for order.
+
+Validation: `python -m app.benchmark` sends 110 HTTP requests per listing through Nginx, discards ten warmups, reports nearest-rank p95 and prints `EXPLAIN (ANALYZE, BUFFERS)` plans. Against the seeded dataset (500 medicines, 2,000 rules, 2,000+ dispenses) on an Apple Silicon laptop under Docker, every listing p95 was below 4ms, against a 300ms target. The plans show index or index-only scans for the patient ledger, rolling sum and rule history. At this size the planner reasonably prefers a bitmap scan plus a small sort for the medicine filter, and walks the code index for an unselective search such as "Generated"; trigram indexes pay off for selective terms and larger catalogues.
+
+Considered: fewer indexes, relying on sequential scans, which would pass at 2,000 rows but degrade linearly; and a composite (medicine_id, patient_ref) ledger index, which the window index already covers. Given up: write amplification of five indexes per dispense insert and the extension dependency on `pg_trgm`. We did not add total counts, which would need a separate count query per page.
+
 ## Error contract
 Return `{ "errors": [{ "code", "field", "message" }] }` for business, schema, framework and database conflicts. Codes support programmatic handling, fields map directly to form controls, and the array preserves simultaneous violations. Use 422 for invalid input or rule rejection, 404 for unknown medicines and 409 for key/start conflicts. A single error string was smaller but loses field mapping and independent failures. Structural errors are collected before business evaluation; missing or invalid quantities cannot meaningfully be compared with a formulary limit.
