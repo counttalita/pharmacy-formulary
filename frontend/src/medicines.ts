@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Medicine } from './api';
@@ -35,9 +35,9 @@ import { PageControls } from './page-controls';
     <app-page-controls [pager]="pager" />
   `,
 })
-export class SearchMedicines implements OnInit, OnDestroy {
+export class SearchMedicines implements OnInit {
   query = '';
-  // Keep catalogue pagination scoped to this view.
+  // Keep catalogue pagination scoped to this view; the pager cancels itself on destroy.
   readonly pager = new Pager<Medicine>('/medicines');
 
   /** Load the initial catalogue page. */
@@ -50,11 +50,5 @@ export class SearchMedicines implements OnInit, OnDestroy {
   async search(): Promise<void> {
     // The pager discards stale requests if the user searches again.
     await this.pager.search({ q: this.query });
-  }
-
-  /** Release any pending catalogue request on navigation. */
-  ngOnDestroy(): void {
-    // Prevent a late response from updating a destroyed view.
-    this.pager.cancel();
   }
 }

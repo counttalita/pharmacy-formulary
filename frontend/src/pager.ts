@@ -1,4 +1,4 @@
-import { signal } from '@angular/core';
+import { DestroyRef, inject, signal } from '@angular/core';
 import { describeError, Page, requestJson } from './api';
 
 export class Pager<T> {
@@ -12,8 +12,11 @@ export class Pager<T> {
   private cursors: (string | null)[] = [null];
   private query = '';
 
-  /** Bind one listing endpoint to its independent pagination state. */
-  constructor(private endpoint: string) {}
+  /** Bind one listing endpoint to its owning view; must be created in an injection context. */
+  constructor(private endpoint: string) {
+    // Abort the in-flight fetch when the owning view is destroyed so nothing retains it.
+    inject(DestroyRef).onDestroy(() => this.cancel());
+  }
 
   /** Reset pagination whenever the user submits different search criteria. */
   async search(parameters: Record<string, string>): Promise<void> {
@@ -43,7 +46,26 @@ export class Pager<T> {
     await this.load();
   }
 
-  /** Cancel requests when their owning view is destroyed. */
+  /** Repeat the current page request after a failure, keeping filters and position. */
+  async retry(): Promise<void> {
+    // Reuse the same cursor rather than restarting from the first page.
+    if (this.busy()) return;
+    await this.load();
+  }
+
+  /** Discard results and pagination when the view has no criteria to list. */
+  clear(): void {
+    // Cancel first so a late response cannot repopulate the cleared view.
+    this.cancel();
+    this.cursors = [null];
+    this.pageNumber.set(1);
+    this.items.set([]);
+    this.nextCursor.set(null);
+    this.error.set('');
+    this.busy.set(false);
+  }
+
+  /** Abort the in-flight request, if any. */
   cancel(): void {
     // Avoid stale updates after navigation.
     this.controller?.abort();

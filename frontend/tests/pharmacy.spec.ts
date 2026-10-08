@@ -95,3 +95,20 @@ test('cancel stale catalogue searches', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'latest', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'slow', exact: true })).toHaveCount(0);
 });
+
+// A failed page load must be recoverable without losing the current filters.
+test('retry a failed catalogue page', async ({ page }) => {
+  let calls = 0;
+  await page.route('**/api/v1/medicines?*', route => {
+    calls += 1;
+    if (calls === 1) return route.fulfill({ status: 500, json: { errors: [
+      { code: 'internal_error', field: 'body', message: 'The request could not be completed.' },
+    ] } });
+    return route.fulfill({ json: { items: [{ code: 'RECOVERED', name: 'Recovered', form: 'tablet', strength_value: 1, strength_unit: 'unit', is_active: true }], next_cursor: null } });
+  });
+  await page.goto('/medicines');
+  await expect(page.getByRole('alert')).toContainText('could not be completed');
+  await page.getByRole('button', { name: 'Retry' }).click();
+  await expect(page.getByRole('link', { name: 'RECOVERED', exact: true })).toBeVisible();
+});
+
