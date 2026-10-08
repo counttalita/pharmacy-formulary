@@ -1,0 +1,97 @@
+import { expect, test } from '@playwright/test';
+
+// Exercise all four views against the real seeded API and persisted ledger.
+test('search, inspect history, capture and find a dispense', async ({ page }) => {
+  await page.goto('/medicines');
+  await expect(page.getByRole('link', { name: 'SEED-0000', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Next page' }).click();
+  await expect(page.getByRole('link', { name: 'SEED-0020', exact: true })).toBeVisible();
+  await page.getByLabel('Search medicines').fill('SEED-0000');
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await page.getByRole('link', { name: 'SEED-0000', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Rule history' })).toBeVisible();
+  await expect(page.locator('.timeline li')).toHaveCount(4);
+  await expect(page.getByText('In force now', { exact: true })).toHaveCount(1);
+  await page.getByRole('link', { name: 'Capture this medicine' }).click();
+  const patient = `browser-${Date.now()}`;
+  await page.getByLabel('Patient reference').fill(patient);
+  await page.getByLabel('Quantity', { exact: true }).fill('1');
+  await page.getByRole('button', { name: 'Record dispense' }).click();
+  await expect(page.getByRole('status')).toContainText('Dispense recorded');
+  await page.getByRole('link', { name: 'View patient ledger' }).click();
+  await expect(page.getByRole('cell', { name: 'SEED-0000' })).toBeVisible();
+});
+
+// Render every reason beside its field without dropping multiple quantity failures.
+test('show all simultaneous server rejections', async ({ page }) => {
+  await page.route('**/api/v1/dispenses', route => route.fulfill({ status: 422, json: { errors: [
+    { code: 'single_quantity_limit', field: 'quantity', message: 'Single limit exceeded.' },
+    { code: 'rolling_quantity_limit', field: 'quantity', message: 'Rolling limit exceeded.' },
+    { code: 'authorisation_required', field: 'authorisation_ref', message: 'Authorisation required.' },
+  ] } }));
+  await page.goto('/capture');
+  await page.getByLabel('Medicine code').fill('SEED-0000');
+  await page.getByLabel('Patient reference').fill('opaque');
+  await page.getByRole('button', { name: 'Record dispense' }).click();
+  await expect(page.locator('#quantity-errors')).toContainText('Single limit exceeded.');
+  await expect(page.locator('#quantity-errors')).toContainText('Rolling limit exceeded.');
+  await expect(page.locator('#authorisation_ref-errors')).toContainText('Authorisation required.');
+});
+
+// A lost response must retain the same payload and key, including after a page reload.
+test('retry uncertain submissions with the original key', async ({ page }) => {
+  const payloads: Record<string, unknown>[] = [];
+  await page.route('**/api/v1/dispenses', async route => {
+    payloads.push(route.request().postDataJSON());
+    if (payloads.length === 1) await route.abort('failed');
+    else await route.fulfill({ status: 201, json: { id: 99, ...payloads[0] } });
+  });
+  await page.goto('/capture');
+  await page.getByLabel('Medicine code').fill('SEED-0000');
+  await page.getByLabel('Patient reference').fill('retry-patient');
+  await page.getByRole('button', { name: 'Record dispense' }).click();
+  await expect(page.getByText('Outcome unknown. Retry the same request to confirm it.')).toBeVisible();
+  await expect(page.getByLabel('Quantity', { exact: true })).toBeDisabled();
+  await page.reload();
+  await page.getByRole('button', { name: 'Retry same request' }).click();
+  await expect(page.getByRole('status')).toContainText('Dispense recorded');
+  expect(payloads).toHaveLength(2);
+  expect(payloads[1]).toEqual(payloads[0]);
+});
+
+// Changing a definitively rejected payload represents a new operation, not a key conflict.
+test('use a new key after correcting a rejected form', async ({ page }) => {
+  const keys: string[] = [];
+  await page.route('**/api/v1/dispenses', route => {
+    keys.push(route.request().postDataJSON().idempotency_key);
+    return route.fulfill({ status: 422, json: { errors: [
+      { code: 'single_quantity_limit', field: 'quantity', message: 'Reduce quantity.' },
+    ] } });
+  });
+  await page.goto('/capture');
+  await page.getByLabel('Medicine code').fill('SEED-0000');
+  await page.getByLabel('Patient reference').fill('corrected-patient');
+  await page.getByLabel('Quantity', { exact: true }).fill('100');
+  await page.getByRole('button', { name: 'Record dispense' }).click();
+  await expect(page.getByText('Reduce quantity.')).toBeVisible();
+  await page.getByLabel('Quantity', { exact: true }).fill('2');
+  await page.getByRole('button', { name: 'Record dispense' }).click();
+  await expect.poll(() => keys.length).toBe(2);
+  expect(keys[1]).not.toBe(keys[0]);
+});
+
+// A stale response from an earlier search must never replace the latest results.
+test('cancel stale catalogue searches', async ({ page }) => {
+  await page.route('**/api/v1/medicines?*', async route => {
+    const query = new URL(route.request().url()).searchParams.get('q');
+    if (query === 'slow') await new Promise(resolve => setTimeout(resolve, 300));
+    await route.fulfill({ json: { items: [{ code: query || 'initial', name: query || 'Initial', form: 'tablet', strength_value: 1, strength_unit: 'unit', is_active: true }], next_cursor: null } });
+  });
+  await page.goto('/medicines');
+  await page.getByLabel('Search medicines').fill('slow');
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await page.getByLabel('Search medicines').fill('latest');
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await expect(page.getByRole('link', { name: 'latest', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'slow', exact: true })).toHaveCount(0);
+});
