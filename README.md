@@ -36,12 +36,3 @@ To run only the backend tests against a running stack:
 ```sh
 docker compose exec api pytest -q
 ```
-
-Measure all listing endpoints after seeding:
-
-```sh
-docker compose exec api python -m app.benchmark
-```
-
-The benchmark prints latency measurements and query plans and exits unsuccessfully
-if any listing's p95 reaches 300ms.
