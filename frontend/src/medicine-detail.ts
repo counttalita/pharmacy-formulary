@@ -1,5 +1,6 @@
 import { DatePipe } from '@angular/common';
-import { Component, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { Component, DestroyRef, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { describeError, Medicine, requestJson, Rule } from './api';
 
@@ -8,7 +9,7 @@ import { describeError, Medicine, requestJson, Rule } from './api';
   imports: [DatePipe, RouterLink],
   template: `
     <!-- Read the detail request's state and retry through the same loader. -->
-    @if (error()) { <p role="alert" class="error">{{ error() }}</p><button (click)="load()">Retry</button> }
+    @if (error()) { <p role="alert" class="error">{{ error() }}</p><button type="button" (click)="load()">Retry</button> }
     @if (busy()) { <p role="status">Loading medicine…</p> }
     @if (medicine(); as item) {
       <h1>{{ item.name }}</h1>
@@ -32,30 +33,37 @@ import { describeError, Medicine, requestJson, Rule } from './api';
     }
   `,
 })
-export class ShowMedicine implements OnInit, OnDestroy {
-  // Resolve the selected route and expose asynchronous state through signals.
+export class ShowMedicine {
+  // Follow the selected route and expose asynchronous state through signals.
   private readonly route = inject(ActivatedRoute);
   readonly medicine = signal<Medicine | null>(null);
   readonly rules = signal<Rule[]>([]);
   readonly busy = signal(false);
   readonly error = signal('');
+  private code = '';
   private controller?: AbortController;
 
-  /** Load the selected medicine and its timeline on entry. */
-  ngOnInit(): void {
-    // Start both independent reads together.
-    void this.load();
+  /** Reload whenever the route code changes; the router reuses this view across codes. */
+  constructor() {
+    // takeUntilDestroyed releases the subscription; DestroyRef aborts the in-flight reads.
+    this.route.paramMap.pipe(takeUntilDestroyed()).subscribe(params => {
+      this.code = params.get('code') ?? '';
+      void this.load();
+    });
+    inject(DestroyRef).onDestroy(() => this.controller?.abort());
   }
 
   /** Fetch medicine details and complete history, with a recoverable error state. */
   async load(): Promise<void> {
-    // Replace any in-flight retry and clear stale error text.
+    // Replace any in-flight read and clear the previous medicine so stale data is never shown.
     this.controller?.abort();
     const controller = new AbortController();
     this.controller = controller;
     this.busy.set(true);
     this.error.set('');
-    const code = encodeURIComponent(this.route.snapshot.paramMap.get('code') ?? '');
+    this.medicine.set(null);
+    this.rules.set([]);
+    const code = encodeURIComponent(this.code);
     try {
       // Independent endpoints can be read concurrently without sharing UI state.
       const [medicine, history] = await Promise.all([
@@ -72,11 +80,5 @@ export class ShowMedicine implements OnInit, OnDestroy {
       // A previous request cannot finish a more recent retry's loading state.
       if (this.controller === controller) this.busy.set(false);
     }
-  }
-
-  /** Stop outstanding reads when leaving the detail view. */
-  ngOnDestroy(): void {
-    // Discard responses belonging to the old route.
-    this.controller?.abort();
   }
 }

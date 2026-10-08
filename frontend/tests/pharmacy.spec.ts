@@ -112,3 +112,15 @@ test('retry a failed catalogue page', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'RECOVERED', exact: true })).toBeVisible();
 });
 
+// History navigation between two medicines reuses the view and must reload its data.
+test('reload medicine detail when the route code changes', async ({ page }) => {
+  await page.goto('/medicines/SEED-0000');
+  await expect(page.getByText('SEED-0000 ·')).toBeVisible();
+  await page.evaluate(() => {
+    history.pushState({}, '', '/medicines/SEED-0001');
+    dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await expect(page.getByText('SEED-0001 ·')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Generated medicine 0001' })).toBeVisible();
+});
+
