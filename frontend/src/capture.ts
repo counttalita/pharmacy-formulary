@@ -13,6 +13,12 @@ interface Submission {
   idempotency_key: string;
 }
 
+/** Create a random idempotency key; randomUUID is unavailable on insecure origins such as plain-HTTP hosts. */
+function createIdempotencyKey(): string {
+  // getRandomValues works in every browser context, unlike crypto.randomUUID.
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
 /** Format a timestamp for a Johannesburg datetime-local input, independent of browser timezone. */
 function formatBusinessTime(value: Date): string {
   // Johannesburg uses UTC+02:00; display that business offset rather than the device's zone.
@@ -97,7 +103,7 @@ export class CaptureDispense implements OnInit {
         authorisation_ref: this.form.authorisation_ref || null };
       // Reuse a definitive rejected outcome only while its payload remains unchanged.
       const fingerprint = JSON.stringify(values);
-      if (fingerprint !== this.fingerprint) this.key = crypto.randomUUID();
+      if (fingerprint !== this.fingerprint) this.key = createIdempotencyKey();
       this.fingerprint = fingerprint;
       this.pending = { ...values, idempotency_key: this.key };
     }
