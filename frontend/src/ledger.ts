@@ -6,7 +6,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Dispense } from './api';
 import { Icon } from './icon';
 import { PageControls } from './page-controls';
-import { Pager } from './pager';
+import { PAGE_SIZE, Pager } from './pager';
 
 @Component({
   selector: 'app-ledger',
@@ -66,8 +66,8 @@ export class ShowLedger {
   readonly patient = signal('');
   readonly searched = signal(false);
   readonly pager = new Pager<Dispense>('/dispenses');
-  // Fixed skeleton rows shown while a page loads, so the layout does not jump.
-  readonly placeholders = [1, 2, 3, 4, 5, 6];
+  // One placeholder per expected row, so the loaded page does not push content down.
+  readonly placeholders = Array.from({ length: PAGE_SIZE }, (_, index) => index);
 
   /** Follow the patient query parameter, including reloads, history and the main navigation link. */
   constructor() {

@@ -1,6 +1,9 @@
 import { DestroyRef, inject, signal } from '@angular/core';
 import { describeError, Page, requestJson } from './api';
 
+// Rows requested per page; views size their loading placeholders from it.
+export const PAGE_SIZE = 20;
+
 export class Pager<T> {
   // Signals expose asynchronous state to Angular's zoneless change detection.
   readonly items = signal<T[]>([]);
@@ -83,7 +86,7 @@ export class Pager<T> {
     this.nextCursor.set(null);
     const cursor = this.cursors.at(-1);
     const parameters = new URLSearchParams(this.query);
-    parameters.set('limit', '20');
+    parameters.set('limit', String(PAGE_SIZE));
     if (cursor) parameters.set('cursor', cursor);
     try {
       // Fetch one page with the original filter scope.

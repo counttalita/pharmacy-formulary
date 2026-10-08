@@ -137,3 +137,25 @@ test('keep the ledger filter in the URL', async ({ page }) => {
   await expect(page.getByLabel('Patient reference')).toHaveValue('');
   await expect(page.getByRole('table')).toHaveCount(0);
 });
+
+// Loading placeholders must reserve the space of the loaded page so content below does not jump.
+test('keep layout stable while the catalogue loads', async ({ page }) => {
+  await page.setViewportSize({ width: 412, height: 823 });
+  await page.addInitScript(() => {
+    (window as unknown as { cls: number }).cls = 0;
+    new PerformanceObserver(list => {
+      for (const entry of list.getEntries() as unknown as { value: number; hadRecentInput: boolean }[]) {
+        if (!entry.hadRecentInput) (window as unknown as { cls: number }).cls += entry.value;
+      }
+    }).observe({ type: 'layout-shift', buffered: true });
+  });
+  await page.route('**/api/v1/medicines?*', async route => {
+    // Hold the response so the placeholder is painted before the real rows replace it.
+    await new Promise(resolve => setTimeout(resolve, 400));
+    await route.continue();
+  });
+  await page.goto('/medicines');
+  await expect(page.getByRole('link', { name: 'SEED-0019', exact: true })).toBeVisible();
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => (window as unknown as { cls: number }).cls)).toBeLessThan(0.1);
+});

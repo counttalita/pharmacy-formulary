@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Medicine } from './api';
 import { Icon } from './icon';
-import { Pager } from './pager';
+import { PAGE_SIZE, Pager } from './pager';
 import { PageControls } from './page-controls';
 
 @Component({
@@ -55,8 +55,8 @@ import { PageControls } from './page-controls';
 })
 export class SearchMedicines implements OnInit {
   query = '';
-  // Fixed skeleton rows shown while a page loads, so the layout does not jump.
-  readonly placeholders = [1, 2, 3, 4, 5, 6];
+  // One placeholder per expected row, so the loaded page does not push content down.
+  readonly placeholders = Array.from({ length: PAGE_SIZE }, (_, index) => index);
   // Keep catalogue pagination scoped to this view; the pager cancels itself on destroy.
   readonly pager = new Pager<Medicine>('/medicines');
 
