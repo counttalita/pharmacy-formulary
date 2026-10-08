@@ -1,0 +1,15 @@
+body { font-family: system-ui, sans-serif; max-width: 64rem; margin: 2rem auto; padding: 0 1rem; color: #202020; }
+nav { display: flex; gap: 1.5rem; border-bottom: 1px solid #ccc; padding-bottom: 1rem; }
+a { color: #134faa; }
+label { display: block; margin: 1rem 0; }
+input, button { font: inherit; padding: .45rem; }
+input { display: block; max-width: 100%; }
+button { cursor: pointer; margin: .25rem .5rem .25rem 0; }
+button:disabled { cursor: default; }
+table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+th, td { padding: .6rem; border-bottom: 1px solid #ccc; text-align: left; }
+.error { color: #a01818; }
+.success { color: #16591b; }
+.timeline { border-left: 2px solid #aaa; padding-left: 1.5rem; }
+.timeline li { margin-bottom: 1rem; }
+fieldset { border: 0; padding: 0; margin: 0; }

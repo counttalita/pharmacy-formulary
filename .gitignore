@@ -6,3 +6,5 @@ node_modules/
 dist/
 .angular/
 .env
+frontend/test-results/
+frontend/playwright-report/
