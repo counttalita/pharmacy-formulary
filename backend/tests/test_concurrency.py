@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
@@ -38,7 +39,10 @@ def test_concurrent_dispenses_cannot_jointly_exceed_limit(database, active_rule)
         """Start each request from an independent pooled connection at the same barrier."""
         # Release both callers together to create competing transactions.
         barrier.wait(timeout=5)
-        return capture_dispense(database, make_dispense(quantity=40, idempotency_key=key))
+        from app.main import app
+        with TestClient(app) as client:
+            response = client.post("/api/v1/dispenses", json=make_dispense(quantity=40, idempotency_key=key))
+            return response.status_code, response.json()
 
     with ThreadPoolExecutor(max_workers=2) as workers:
         gate = database.connect()
