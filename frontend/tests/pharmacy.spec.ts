@@ -159,3 +159,98 @@ test('keep layout stable while the catalogue loads', async ({ page }) => {
   await page.waitForTimeout(300);
   expect(await page.evaluate(() => (window as unknown as { cls: number }).cls)).toBeLessThan(0.1);
 });
+
+// Rule editor tests run against a mocked medicine so the seeded history is never changed.
+const medicine = { code: 'MOCK-001', name: 'Mock medicine', form: 'tablet', strength_value: '10', strength_unit: 'mg', is_active: true };
+const april = { id: 1, effective_from: '2026-04-09T22:00:00Z', effective_to: null as string | null,
+  max_quantity_per_dispense: 60, max_quantity_per_30_days: 120, requires_authorisation: false, is_current: true };
+const businessToday = () => new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+/** Serve a medicine whose history changes once a rule is posted. */
+async function mockRules(page: import('@playwright/test').Page, onPost: (body: Record<string, unknown>) => { status: number; json: unknown }) {
+  let rules = [april];
+  const posts: Record<string, unknown>[] = [];
+  await page.route('**/api/v1/medicines/MOCK-001', route =>
+    route.fulfill({ json: { ...medicine, current_rule: rules.find(rule => rule.is_current) ?? null } }));
+  await page.route('**/api/v1/medicines/MOCK-001/rules', async route => {
+    if (route.request().method() !== 'POST') return route.fulfill({ json: { items: rules } });
+    const body = route.request().postDataJSON();
+    posts.push(body);
+    const result = onPost(body);
+    if (result.status === 201) {
+      const start = `${body.effective_from}T00:00:00+02:00`;
+      rules = [{ ...april, effective_to: start, is_current: false }, { ...(result.json as typeof april), is_current: true }];
+    }
+    return route.fulfill(result);
+  });
+  return posts;
+}
+
+// 10 Apr 2026 → open ended, in force, 60 / 120 / not required: update to 30 per dispense through the modal.
+test('update the rule in force from 60 to 30 per dispense', async ({ page }) => {
+  const posts = await mockRules(page, body => ({ status: 201, json: { ...april, id: 2,
+    effective_from: new Date(`${body.effective_from}T00:00:00+02:00`).toISOString(), max_quantity_per_dispense: 30 } }));
+  await page.goto('/medicines/MOCK-001');
+  const current = page.locator('.timeline li.current');
+  await expect(current).toContainText('10 Apr 2026');
+  await expect(current).toContainText('open ended');
+  await expect(current).toContainText('In force now');
+  await expect(current).toContainText('Per dispense 60');
+  await expect(current).toContainText('Per 30 days 120');
+  await expect(current).toContainText('Authorisation not required');
+
+  await page.getByRole('button', { name: 'Update rule', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Update rule' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel('Per dispense')).toHaveValue('60');
+  await expect(dialog.getByLabel('Per 30 days')).toHaveValue('120');
+  await expect(dialog.getByLabel('Authorisation required')).not.toBeChecked();
+  await expect(dialog.getByLabel(/Effective from/)).toHaveValue(businessToday());
+  await expect(dialog.getByRole('button', { name: 'Save new version' })).toBeDisabled();
+
+  await dialog.getByLabel('Per dispense').fill('30');
+  await expect(dialog.locator('.change-summary')).toContainText('Per dispense 60');
+  await expect(dialog.locator('.change-summary')).toContainText('30');
+  await dialog.getByRole('button', { name: 'Save new version' }).click();
+
+  await expect(dialog).toBeHidden();
+  expect(posts).toEqual([{ effective_from: businessToday(), max_quantity_per_dispense: 30,
+    max_quantity_per_30_days: 120, requires_authorisation: false }]);
+  await expect(page.locator('.alert.success')).toContainText('Rule saved: 30 per dispense, 120 per 30 days');
+  await expect(page.locator('.timeline li')).toHaveCount(2);
+  await expect(page.locator('.timeline li').first()).toContainText('Per dispense 60');
+  await expect(page.locator('.timeline li').first()).not.toContainText('open ended');
+  await expect(current).toContainText('open ended');
+  await expect(current).toContainText('Per dispense 30');
+  await expect(current).toContainText('Per 30 days 120');
+  await expect(current).toContainText('Authorisation not required');
+  await expect(page.locator('.stat').first()).toContainText('30');
+});
+
+// Server rejections stay in the modal, beside their fields, with the entered values intact.
+test('show rule update rejections beside their fields', async ({ page }) => {
+  await mockRules(page, () => ({ status: 409, json: { errors: [
+    { code: 'rule_start_conflict', field: 'effective_from', message: 'A rule already starts on this date.' },
+  ] } }));
+  await page.goto('/medicines/MOCK-001');
+  await page.getByRole('button', { name: 'Update rule', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Update rule' });
+  await dialog.getByLabel('Per dispense').fill('45');
+  await dialog.getByRole('button', { name: 'Save new version' }).click();
+  await expect(dialog.locator('#effective_from-errors')).toContainText('A rule already starts on this date.');
+  await expect(dialog.getByLabel('Per dispense')).toHaveValue('45');
+});
+
+// Obvious mistakes are caught before any request is sent.
+test('block a 30-day limit below the per-dispense limit locally', async ({ page }) => {
+  const posts = await mockRules(page, () => ({ status: 500, json: { errors: [] } }));
+  await page.goto('/medicines/MOCK-001');
+  await page.getByRole('button', { name: 'Update rule', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Update rule' });
+  await dialog.getByLabel('Per dispense').fill('150');
+  await dialog.getByRole('button', { name: 'Save new version' }).click();
+  await expect(dialog.locator('#max_quantity_per_30_days-errors')).toContainText('at least the per-dispense limit');
+  expect(posts).toHaveLength(0);
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog).toBeHidden();
+});
