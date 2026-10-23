@@ -6,6 +6,15 @@ class ApiError(Exception):
         self.status = status
         self.body = {"errors": [{"code": code, "field": field, "message": message}]}
 
+    @classmethod
+    def many(cls, status, errors):
+        """Report several independent violations at once, preserving their order."""
+        # Build from the first error, then expose the complete list in the envelope.
+        first = errors[0]
+        error = cls(status, first["code"], first["field"], first["message"])
+        error.body = {"errors": list(errors)}
+        return error
+
 
 def describe_validation(error):
     """Translate Pydantic details into the API's consistent error contract."""

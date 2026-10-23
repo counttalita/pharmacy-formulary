@@ -17,7 +17,7 @@ from app.database import fetch_all, fetch_one, get_engine
 from app.dispenses import capture_dispense, record_outcome
 from app.errors import ApiError, describe_validation
 from app.rules import find_rule, supersede_rule
-from app.schemas import CreateDispense, CreateRule
+from app.schemas import CreateDispense, CreateRule, FormularyRule, RuleHistoryResponse
 
 # Construct the API and reusable query constraints.
 app = FastAPI(title="Pharmacy formulary", version="1.0", docs_url="/api/docs", openapi_url="/api/openapi.json")
@@ -88,9 +88,9 @@ def get_medicine(code: str):
         return medicine
 
 
-@app.get("/api/v1/medicines/{code}/rules")
+@app.get("/api/v1/medicines/{code}/rules", response_model=RuleHistoryResponse, summary="Get rule history")
 def get_rule_history(code: str):
-    """Return the complete ordered timeline, explicitly marking the current rule."""
+    """Return the complete ordered timeline of formulary rules for a medicine, explicitly marking the current rule."""
     # The brief requests full history, so this small per-medicine list is unpaginated.
     with get_engine().connect() as connection:
         medicine = require_medicine(connection, code)
@@ -100,9 +100,20 @@ def get_rule_history(code: str):
         """, {"medicine": medicine["id"]})}
 
 
-@app.post("/api/v1/medicines/{code}/rules", status_code=201)
+@app.post("/api/v1/medicines/{code}/rules", status_code=201, response_model=FormularyRule, summary="Add or update a formulary rule")
 def create_rule(code: str, request: CreateRule):
-    """Introduce a new rule version from a Johannesburg business date."""
+    """Introduce a new rule version from a Johannesburg calendar date.
+
+    - Interprets the date as midnight Africa/Johannesburg (UTC+02:00).
+    - Supersedes the containing period, shortening its `effective_to` without mutating earlier dispenses.
+    - Preserves any already scheduled future versions.
+    - Validates business constraints:
+      - Returns 404 (`medicine_not_found`) if the medicine code does not exist.
+      - Returns 409 (`rule_start_conflict`) if a version already starts on this date.
+      - Returns 422 (`rolling_below_single`) if `max_quantity_per_30_days` < `max_quantity_per_dispense`.
+      - Returns 422 (`rule_unchanged`) if the new version identical to the superseded period.
+      - Returns 422 (`invalid_input`) if quantities are non-positive or dates are outside 2000-2100.
+    """
     # Delegate transaction ownership to the versioning service.
     return supersede_rule(get_engine(), code, request)
 

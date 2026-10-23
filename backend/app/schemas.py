@@ -5,14 +5,37 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StrictBool, fi
 
 PositiveQuantity = Annotated[int, Field(strict=True, gt=0, le=2147483647)]
 Reference = Annotated[str, Field(min_length=1, max_length=120)]
+# Business dates outside this range are input mistakes; date.min would also overflow UTC conversion.
+RuleDate = Annotated[date, Field(ge=date(2000, 1, 1), le=date(2100, 12, 31))]
 
 
 class CreateRule(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    effective_from: date
+    effective_from: RuleDate
     max_quantity_per_dispense: PositiveQuantity
     max_quantity_per_30_days: PositiveQuantity
     requires_authorisation: StrictBool
+
+
+class FormularyRule(BaseModel):
+    """Temporal formulary rule version."""
+    id: int
+    medicine_id: int
+    effective_from: AwareDatetime
+    effective_to: AwareDatetime | None = None
+    max_quantity_per_dispense: int
+    max_quantity_per_30_days: int
+    requires_authorisation: bool
+
+
+class RuleHistoryItem(FormularyRule):
+    """Rule version with current status flag."""
+    is_current: bool
+
+
+class RuleHistoryResponse(BaseModel):
+    items: list[RuleHistoryItem]
+
 
 
 class CreateDispense(BaseModel):
