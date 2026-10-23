@@ -14,6 +14,14 @@ services:
       retries: 30
   api:
     build: ./backend
+    develop: # Configure development-time file watching.
+      watch: # Define which local changes trigger an action.
+        - action: rebuild # Rebuild the image and recreate the API container.
+          path: ./backend # Watch backend files on your computer.
+          ignore: # Exclude generated local files.
+            - .venv/ # Ignore the local Python environment.
+            - "**/__pycache__/" # Ignore generated Python bytecode.
+            - .pytest_cache/ # Ignore pytest's cache.
     ports:
       - "8000:8000"
     environment:
@@ -30,6 +38,16 @@ services:
     build:
       context: ./frontend
       target: serve
+    develop: # Configure development-time file watching.
+      watch: # Define which local changes trigger an action.
+        - action: rebuild # Rebuild Angular and recreate the Nginx container.
+          path: ./frontend # Watch frontend files on your computer.
+          ignore: # Exclude dependencies and generated output.
+            - node_modules/ # Dependencies are installed inside the image.
+            - dist/ # Ignore compiled frontend output.
+            - .angular/ # Ignore Angular's local cache.
+            - test-results/ # Ignore browser-test output.
+            - playwright-report/ # Ignore generated test reports.
     ports:
       - "8080:80"
     depends_on:
