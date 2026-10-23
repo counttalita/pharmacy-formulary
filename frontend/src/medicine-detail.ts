@@ -4,16 +4,20 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { describeError, Medicine, requestJson, Rule } from './api';
 import { Icon } from './icon';
+import { RuleDialog } from './rule-dialog';
 
 @Component({
   selector: 'app-medicine-detail',
-  imports: [DatePipe, Icon, RouterLink],
+  imports: [DatePipe, Icon, RouterLink, RuleDialog],
   template: `
     <a class="back-link" routerLink="/medicines"><app-icon name="back" />All medicines</a>
     <!-- Read the detail request's state and retry through the same loader. -->
     @if (error()) {
       <div class="alert error" role="alert"><app-icon name="alert" /><div class="alert-body"><p>{{ error() }}</p>
         <div class="actions"><button type="button" class="secondary" (click)="load()"><app-icon name="retry" />Retry</button></div></div></div>
+    }
+    @if (notice()) {
+      <div class="alert success"><app-icon name="check" /><div class="alert-body"><p role="status">{{ notice() }}</p></div></div>
     }
     @if (busy()) {
       <p role="status" class="visually-hidden">Loading medicine…</p>
@@ -27,7 +31,12 @@ import { Icon } from './icon';
             <p class="meta">{{ item.code }} · {{ item.form }} · {{ item.strength_value }} {{ item.strength_unit }}</p>
             <span class="badge" [class.ok]="item.is_active" [class.off]="!item.is_active">{{ item.is_active ? 'Active' : 'Inactive — dispensing is unavailable' }}</span>
           </div>
-          @if (item.is_active) { <a class="button" routerLink="/capture" [queryParams]="{ medicine: item.code }"><app-icon name="plus" />Capture this medicine</a> }
+          <div class="hero-actions">
+            @if (item.current_rule; as current) {
+              <button id="update-current-rule" type="button" class="secondary" (click)="openEditor(current)"><app-icon name="edit" />Update rule</button>
+            }
+            @if (item.is_active) { <a class="button" routerLink="/capture" [queryParams]="{ medicine: item.code }"><app-icon name="plus" />Capture this medicine</a> }
+          </div>
         </div>
         <!-- Summarise the rule in force now; the timeline below shows every version. -->
         @if (item.current_rule; as rule) {
@@ -42,7 +51,8 @@ import { Icon } from './icon';
       </div>
       <div class="card">
         <div class="card-header"><div><h2>Rule history</h2>
-          <p>Dates and times are shown in Africa/Johannesburg. Each rule ends when the next period starts.</p></div></div>
+          <p>Dates and times are shown in Africa/Johannesburg. Each rule ends when the next period starts.</p></div>
+          <button id="add-rule" type="button" (click)="openEditor(null)"><app-icon name="plus" />Add rule</button></div>
         @if (!rules().length) { <div class="empty"><app-icon name="inbox" /><strong>No rules have been recorded.</strong></div> }
         <ol class="timeline">
           @for (rule of rules(); track rule.id) {
@@ -54,6 +64,7 @@ import { Icon } from './icon';
                   {{ rule.effective_to ? (rule.effective_to | date:'d MMM yyyy':'+0200') : 'open ended' }}
                   @if (rule.is_current) { <span class="badge live">In force now</span> }
                   @else if (isScheduled(rule)) { <span class="badge plain">Scheduled</span> }
+                  <button type="button" class="secondary small push" [attr.aria-label]="'Update version starting ' + (rule.effective_from | date:'d MMM yyyy':'+0200')" (click)="openEditor(rule)"><app-icon name="edit" />Update</button>
                 </div>
                 <p class="rule-limits">
                   <span>Per dispense <b>{{ rule.max_quantity_per_dispense }}</b></span>
@@ -65,6 +76,9 @@ import { Icon } from './icon';
           }
         </ol>
       </div>
+      @if (editing(); as edit) {
+        <app-rule-dialog [code]="item.code" [base]="edit.base" (saved)="onSaved($event)" (closed)="editing.set(null)" />
+      }
     }
   `,
 })
@@ -75,6 +89,9 @@ export class ShowMedicine {
   readonly rules = signal<Rule[]>([]);
   readonly busy = signal(false);
   readonly error = signal('');
+  readonly notice = signal('');
+  // The open rule editor; base is the version being updated, or null when adding.
+  readonly editing = signal<{ base: Rule | null } | null>(null);
   private code = '';
   private controller?: AbortController;
 
@@ -83,6 +100,8 @@ export class ShowMedicine {
     // takeUntilDestroyed releases the subscription; DestroyRef aborts the in-flight reads.
     this.route.paramMap.pipe(takeUntilDestroyed()).subscribe(params => {
       this.code = params.get('code') ?? '';
+      this.notice.set('');
+      this.editing.set(null);
       void this.load();
     });
     inject(DestroyRef).onDestroy(() => this.controller?.abort());
@@ -120,5 +139,19 @@ export class ShowMedicine {
   /** Mark versions that start after now, so the timeline separates past, current and scheduled rules. */
   isScheduled(rule: Rule): boolean {
     return new Date(rule.effective_from).getTime() > Date.now();
+  }
+
+  /** Open the rule modal, pre-filled from a version when updating. */
+  openEditor(base: Rule | null): void {
+    this.notice.set('');
+    this.editing.set({ base });
+  }
+
+  /** Close the modal and reload so the timeline reflects the closed and inserted periods. */
+  onSaved(rule: Rule): void {
+    this.editing.set(null);
+    const from = new Date(rule.effective_from).toLocaleDateString('en-ZA', { timeZone: 'Africa/Johannesburg', day: 'numeric', month: 'short', year: 'numeric' });
+    this.notice.set(`Rule saved: ${rule.max_quantity_per_dispense} per dispense, ${rule.max_quantity_per_30_days} per 30 days from ${from}.`);
+    void this.load();
   }
 }

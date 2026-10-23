@@ -196,6 +196,31 @@ ul.error li::before { content: "!"; display: inline-grid; place-items: center; f
 .rule-period { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; font-weight: 650; }
 .rule-limits { display: flex; gap: 1.5rem; flex-wrap: wrap; margin: .5rem 0 0; font-size: .88rem; color: var(--text-muted); }
 .rule-limits b { color: var(--text); font-variant-numeric: tabular-nums; }
+.hero-actions { display: flex; gap: .6rem; flex-wrap: wrap; }
+button.small { padding: .3rem .65rem; font-size: .8rem; border-radius: 8px; }
+.push { margin-left: auto; }
+
+/* Rule editor modal */
+.modal {
+  width: min(34rem, calc(100vw - 2rem)); padding: 0; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); color: var(--text); box-shadow: 0 24px 64px rgb(16 24 40 / .28);
+}
+.modal[open] { animation: modal-in .18s ease-out; }
+.modal::backdrop { background: rgb(15 23 32 / .45); backdrop-filter: blur(3px); }
+@keyframes modal-in { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .modal[open] { animation: none; } }
+.modal-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; padding: 1.25rem 1.5rem 0; }
+.modal-header p { margin: .3rem 0 0; font-size: .85rem; color: var(--text-muted); }
+.modal-body { padding: 1.25rem 1.5rem; }
+.modal-footer { display: flex; justify-content: flex-end; gap: .75rem; padding: 1rem 1.5rem; border-top: 1px solid var(--border); background: var(--surface-muted); border-radius: 0 0 var(--radius) var(--radius); }
+.icon-button { padding: .4rem; background: transparent; color: var(--text-muted); }
+.icon-button:hover:not(:disabled) { background: var(--surface-muted); color: var(--text); }
+label.check { display: flex; align-items: center; gap: .6rem; cursor: pointer; }
+label.check input { width: 1.1rem; height: 1.1rem; margin: 0; accent-color: var(--accent); }
+.change-summary { display: flex; flex-wrap: wrap; gap: .5rem .9rem; align-items: center; margin-top: 1.25rem; padding: .75rem 1rem; border-radius: 10px; background: var(--accent-soft); font-size: .85rem; }
+.change-title { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; color: var(--accent-strong); }
+.change { display: inline-flex; align-items: center; gap: .35rem; }
+.change b { font-weight: 600; color: var(--text-muted); }
 
 /* Capture layout */
 .split > .card { margin-top: 0; }

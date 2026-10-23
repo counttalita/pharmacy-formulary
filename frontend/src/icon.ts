@@ -14,6 +14,8 @@ const PATHS: Record<string, string> = {
   left: 'M15 18l-6-6 6-6',
   right: 'M9 18l6-6-6-6',
   inbox: 'M22 12h-6l-2 3h-4l-2-3H2 M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6Z',
+  edit: 'M12 20h9 M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z',
+  close: 'M18 6 6 18 M6 6l12 12',
 };
 
 @Component({
